@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en-us">
-
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Frickbears 3</title>
     <style>
       @-webkit-keyframes rotation { from { -webkit-transform: rotate(0deg); } to { -webkit-transform: rotate(360deg); } }
@@ -47,9 +48,12 @@
         -webkit-transition: opacity 5s ease-in;
         opacity: 0;
         filter: blur(0) grayscale(0);
-        image-rendering: optimizeQuality;
-        image-rendering: auto;
-        -ms-interpolation-mode: bicubic;
+        /* Performance boosts */
+        image-rendering: pixelated;
+        will-change: transform;
+        transform: translateZ(0);
+        -webkit-transform: translateZ(0);
+        -ms-interpolation-mode: nearest-neighbor;
       }
 
       canvas.active { animation-name: fadeIn; animation-duration: 2s; opacity: 1; }
@@ -437,7 +441,15 @@
         window.__NORMALIZE_PATH__ = normalizePath;
       })();
 
-      // WIDESCREEN: force canvas to always fill full window
+      // ---- PERFORMANCE BOOSTS FOR LOW-END CHROMEBOOKS ----
+      // Force GPU acceleration
+      document.documentElement.style.transform = 'translateZ(0)';
+      // Disable unnecessary background animations on low-end devices
+      if (navigator.hardwareConcurrency <= 2) {
+        document.body.style.background = '#060612';
+        document.body.style.backgroundImage = 'none';
+      }
+
       const CHANGE_ASPECT_RATIO = false;
 
       var bodyElement = document.getElementsByTagName("body")[0];
@@ -478,6 +490,9 @@
       var Module = {
         preRun: [],
         postRun: [],
+        // Performance: pre-allocate memory to avoid GC pauses
+        INITIAL_MEMORY: 134217728,
+        ALLOW_MEMORY_GROWTH: true,
         locateFile: function (path, prefix) {
           const p = String(path).replace(/^\/+/, "");
           const normalized = window.__NORMALIZE_PATH__ ? window.__NORMALIZE_PATH__(p) : p;
@@ -544,10 +559,8 @@
 
       var g_pWadLoadCallback = undefined;
       function setWadLoadCallback(_wadLoadCallback) { g_pWadLoadCallback = _wadLoadCallback; }
-
       var g_pAddAsyncMethod = -1;
       function setAddAsyncMethod(asyncMethod) { g_pAddAsyncMethod = asyncMethod; }
-
       var g_pJSExceptionHandler = undefined;
       function setJSExceptionHandler(exceptionHandler) { if (typeof exceptionHandler == "function") g_pJSExceptionHandler = exceptionHandler; }
       function hasJSExceptionHandler() { return (g_pJSExceptionHandler != undefined) && (typeof g_pJSExceptionHandler == "function"); }
@@ -564,7 +577,7 @@
         ensureAspectRatio();
       }
 
-      // WIDESCREEN: always fill full screen, ignore aspect ratio
+      // WIDESCREEN: always fill full screen
       function ensureAspectRatio() {
         if (canvasElement === undefined) return;
         canvasElement.classList.add("active");
@@ -655,6 +668,8 @@
         if ((!window.oprt || !window.oprt.enterFullscreen) && (!window.chrome || !window.chrome.runtime || !window.chrome.runtime.sendMessage)) {
           quitButton.hidden = true;
         }
+        // Trigger GC cleanup after load to free memory
+        if (window.gc) window.gc();
       });
 
       setWadLoadCallback(() => { enterFullscreenIfSupported(); lockOrientationIfSupported(); });
@@ -672,7 +687,6 @@
       };
 
       read_pointer = () => { var ptr = Module.getValue(read_ptr, "*"); read_ptr += 8; return ptr; };
-
       readPeer = () => ({ peer: read_int(), local_frames_ahead: read_int(), rtt: read_int(), remote_frame_rate: read_int(), remote_frame_delay: read_int() });
 
       readStats = (s) => {
@@ -694,8 +708,7 @@
       drawLocal = (peers_elem, frame_delay_elem, relay_rtt_elem, peer_name, relay_rtt, frame_delay) => {
         drawPeer(peers_elem, frame_delay_elem, peer_name, 0, frame_delay, 0);
         const per_pixel = 100/16;
-        const frames_rtt = relay_rtt/16;
-        const y = 100 - frames_rtt * per_pixel;
+        const y = 100 - (relay_rtt/16) * per_pixel;
         const relay_rtt_marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         relay_rtt_marker.setAttribute('x1', -2); relay_rtt_marker.setAttribute('y1', y);
         relay_rtt_marker.setAttribute('x2', 2); relay_rtt_marker.setAttribute('y2', y);
